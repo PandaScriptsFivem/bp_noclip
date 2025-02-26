@@ -1,6 +1,6 @@
 local noclipActive = false
 local playerPed = PlayerPedId()
-
+local playerPositions = {}
 local function startParachuteAnimation()
     lib.playAnim(playerPed, "skydive@base", "free_idle", 8.0, 8.0, -1, 3)
 end
@@ -65,7 +65,7 @@ local function toggleNoclip()
 end
 
 local function handleNoclipMovement()
-    playerPed = PlayerPedId()
+    local playerPed = PlayerPedId()
     local entity = playerPed
     if IsPedInAnyVehicle(playerPed, false) then
         entity = GetVehiclePedIsIn(playerPed, false)
@@ -82,38 +82,37 @@ local function handleNoclipMovement()
         speed = 2.5
     end
 
+    local newPos = GetEntityCoords(entity)
+
     if IsControlPressed(0, 32) then 
-        local pos = GetEntityCoords(entity) + forwardVector * speed
-        SetEntityCoordsNoOffset(entity, pos.x, pos.y, pos.z, true, true, true)
+        newPos = newPos + forwardVector * speed
     end
 
     if IsControlPressed(0, 33) then 
-        local pos = GetEntityCoords(entity) - forwardVector * speed
-        SetEntityCoordsNoOffset(entity, pos.x, pos.y, pos.z, true, true, true)
+        newPos = newPos - forwardVector * speed
     end
 
     if IsControlPressed(0, 44) then 
-        local pos = GetEntityCoords(entity) + vector3(0, 0, speed)
-        SetEntityCoordsNoOffset(entity, pos.x, pos.y, pos.z, true, true, true)
+        newPos = newPos + vector3(0, 0, speed)
     end
 
     if IsControlPressed(0, 46) then 
-        local pos = GetEntityCoords(entity) + vector3(0, 0, -speed)
-        SetEntityCoordsNoOffset(entity, pos.x, pos.y, pos.z, true, true, true)
+        newPos = newPos + vector3(0, 0, -speed)
     end
 
     if IsControlPressed(0, 30) then 
-        local pos = GetEntityCoords(entity) + rightVector * speed
-        SetEntityCoordsNoOffset(entity, pos.x, pos.y, pos.z, true, true, true)
+        newPos = newPos + rightVector * speed
     end
 
     if IsControlPressed(0, 34) then 
-        local pos = GetEntityCoords(entity) - rightVector * speed
-        SetEntityCoordsNoOffset(entity, pos.x, pos.y, pos.z, true, true, true)
+        newPos = newPos - rightVector * speed
     end
 
     local camRotZ = camRot.z
     SetEntityHeading(entity, camRotZ)
+
+    local playerId = GetPlayerServerId(PlayerId())
+    playerPositions[playerId] = {position = newPos, heading = camRotZ}
 end
 
 function RotationToDirection(rotation)
@@ -129,6 +128,17 @@ function RotationToRightDirection(rotation)
 end
 
 
+local function syncOtherPlayers()
+    for playerId, data in pairs(playerPositions) do
+        if playerId ~= GetPlayerServerId(PlayerId()) then 
+            local playerPed = GetPlayerPed(GetPlayerFromServerId(playerId))
+            SetEntityCoordsNoOffset(playerPed, data.position.x, data.position.y, data.position.z, true, true, true)
+            SetEntityHeading(playerPed, data.heading)
+        end
+    end
+end
+
+
 CreateThread(function()
     while true do
         Wait(0)
@@ -137,6 +147,7 @@ CreateThread(function()
                 startParachuteAnimation()
             end
             handleNoclipMovement()
+            syncOtherPlayers()
         end
     end
 end)
