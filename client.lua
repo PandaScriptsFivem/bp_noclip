@@ -3,15 +3,15 @@ local camera = nil
 local speedMultipliers = { normal = 1.0, slow = 0.5, fast = 4.0 }
 local sleep = 250
 local controls = {
-    slow = 19,    -- Left Alt
-    fast = 21,    -- Left Shift
-    forward = 32, -- W
-    backward = 33,-- S
-    up = 44,      -- Q
-    down = 46,    -- Z
-    left = 34,    -- A
-    right = 30,   -- D
-    exit = 23     -- F
+    slow = 19,    
+    fast = 21,   
+    forward = 32,
+    backward = 33,
+    up = 44,      
+    down = 46,   
+    left = 34,   
+    right = 30,   
+    exit = 23     
 }
 
 local function playCameraTransition()
