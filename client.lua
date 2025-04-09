@@ -35,7 +35,7 @@ end
 
 local function showTextUI()
     lib.showTextUI(
-    '[WASD] - Mozgás  [Q/E] - Magasság\n'..
+    '[WASD] - Mozgás  [Q/E] - Fel/Le\n'..
     '\n\n[SHIFT/ALT] - Sebesség  [F] - Kilépés', {
         position = "right-center",
         icon = 'hand'
