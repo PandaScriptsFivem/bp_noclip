@@ -1,148 +1,167 @@
 local noclipActive = false
-local playerPed = PlayerPedId()
-local playerPositions = {}
-local function startParachuteAnimation()
-    lib.playAnim(playerPed, "skydive@base", "free_idle", 8.0, 8.0, -1, 3)
+local camera = nil
+local speedMultipliers = { normal = 1.0, slow = 0.5, fast = 4.0 }
+local sleep = 250
+local controls = {
+    slow = 19,    -- Left Alt
+    fast = 21,    -- Left Shift
+    forward = 32, -- W
+    backward = 33,-- S
+    up = 44,      -- Q
+    down = 46,    -- Z
+    left = 34,    -- A
+    right = 30,   -- D
+    exit = 23     -- F
+}
+
+local function playCameraTransition()
+    if not DoesCamExist(camera) then return end
+    
+    local camCoords = GetCamCoord(camera)
+    local camRot = GetCamRot(camera, 2)
+    local playerPed = PlayerPedId()
+    
+    local targetCoords = GetEntityCoords(playerPed)
+    local targetHeading = GetEntityHeading(playerPed)
+    
+    DoScreenFadeOut(500)
+    Wait(500)
+    
+    SetCamCoord(camera, targetCoords.x, targetCoords.y, targetCoords.z + 0.5)
+    SetCamRot(camera, 0.0, 0.0, targetHeading, 2)
+    
+    DoScreenFadeIn(500)
 end
 
-local function stopParachuteAnimation()
-    ClearPedTasks(playerPed)
+local function showTextUI()
+    lib.showTextUI(
+    '[WASD] - Mozgás  [Q/E] - Magasság\n'..
+    '\n\n[SHIFT/ALT] - Sebesség  [F] - Kilépés', {
+        position = "right-center",
+        icon = 'hand'
+    })
 end
 
-local function placeOnGround()
-    local entity = playerPed
-    if IsPedInAnyVehicle(playerPed, false) then
-        entity = GetVehiclePedIsIn(playerPed, false)
-    end
-
-    local pos = GetEntityCoords(entity)
-    local foundGround, groundZ = false, nil
-    local zCoord = pos.z
-
-    for i = 0, 1000, 1 do
-        foundGround, groundZ = GetGroundZFor_3dCoord(pos.x, pos.y, zCoord - i, false)
-        if foundGround then
-            break
-        end
-    end
-
-    if foundGround then
-        SetEntityCoords(entity, pos.x, pos.y, groundZ, true, true, true)
-    else
-        lib.notify({ title = "Nem sikerült földet találni", type = "error" })
-    end
+local function hideTextUI()
+    lib.hideTextUI()
 end
 
-local function toggleNoclip()
-    noclipActive = not noclipActive
-    playerPed = PlayerPedId()
-
-    if noclipActive then
-        if IsPedInAnyVehicle(playerPed, false) then
-            local vehicle = GetVehiclePedIsIn(playerPed, false)
-            FreezeEntityPosition(vehicle, true)
-        else
-            startParachuteAnimation()
-            FreezeEntityPosition(playerPed, true)
-        end
-        SetLocalPlayerAsGhost(true)
-        SetGhostedEntityAlpha(0)
-        NetworkSetPlayerIsPassive(true)
-        lib.notify({ title = "Noclip aktiválva", type = "success" })
-    else
-        if IsPedInAnyVehicle(playerPed, false) then
-            local vehicle = GetVehiclePedIsIn(playerPed, false)
-            FreezeEntityPosition(vehicle, false)
-        else
-            stopParachuteAnimation()
-            FreezeEntityPosition(playerPed, false)
-        end
-        placeOnGround()
-        SetLocalPlayerAsGhost(false)
-        NetworkSetPlayerIsPassive(false)
-        lib.notify({ title = "Noclip kikapcsolva", type = "error" })
-    end
+local function createCamera()
+    local playerPed = PlayerPedId()
+    local coords = GetEntityCoords(playerPed)
+    camera = CreateCamWithParams("DEFAULT_SCRIPTED_CAMERA", coords.x, coords.y, coords.z + 0.5, 0.0, 0.0, GetEntityHeading(playerPed), 70.0)
+    SetCamActive(camera, true)
+    RenderScriptCams(true, false, 1000, true, true)
+    SetFocusPosAndVel(coords.x, coords.y, coords.z, 0.0, 0.0, 0.0)
 end
+
+local function destroyCamera()
+    RenderScriptCams(false, false, 1000, true, true)
+    DestroyCam(camera, false)
+    ClearFocus()
+    camera = nil
+end
+
+local function placeCharacter()
+    local playerPed = PlayerPedId()
+    local camCoords = GetCamCoord(camera)
+    local camRot = GetCamRot(camera, 2)
+    
+    playCameraTransition()
+    
+    local _, groundZ = GetGroundZFor_3dCoord(camCoords.x, camCoords.y, camCoords.z, false)
+    SetEntityCoords(playerPed, camCoords.x, camCoords.y, groundZ or camCoords.z, false, false, false, false)
+    SetEntityHeading(playerPed, camRot.z)
+    FreezeEntityPosition(playerPed, false)
+    SetEntityAlpha(playerPed, 255, false)
+end
+
+local function handleMouseRotation()
+    local mouseX = GetDisabledControlNormal(0, 1) * 8.0
+    local mouseY = GetDisabledControlNormal(0, 2) * 8.0
+    local camRot = GetCamRot(camera, 2)
+    
+    camRot = vector3(
+        math.max(-89.0, math.min(89.0, camRot.x - mouseY)),
+        camRot.y,
+        camRot.z - mouseX
+    )
+    
+    SetCamRot(camera, camRot.x, camRot.y, camRot.z, 2)
+end
+
 local function handleNoclipMovement()
-    playerPed = PlayerPedId()
-    local entity = playerPed
-    if IsPedInAnyVehicle(playerPed, false) then
-        entity = GetVehiclePedIsIn(playerPed, false)
-    end
-
-    local camRot = GetGameplayCamRot(0)
-    local forwardVector = RotationToDirection(camRot)
-    local rightVector = RotationToRightDirection(camRot)
-    local speed = 1.0
-
-    if IsControlPressed(0, 19) then 
-        speed = 0.5
-    elseif IsControlPressed(0, 21) then 
-        speed = 2.5
-    end
-
-    if IsControlPressed(0, 32) then 
-        local pos = GetEntityCoords(entity) + forwardVector * speed
-        SetEntityCoordsNoOffset(entity, pos.x, pos.y, pos.z, true, true, true)
-    end
-
-    if IsControlPressed(0, 33) then 
-        local pos = GetEntityCoords(entity) - forwardVector * speed
-        SetEntityCoordsNoOffset(entity, pos.x, pos.y, pos.z, true, true, true)
-    end
-
-    if IsControlPressed(0, 44) then 
-        local pos = GetEntityCoords(entity) + vector3(0, 0, speed)
-        SetEntityCoordsNoOffset(entity, pos.x, pos.y, pos.z, true, true, true)
-    end
-
-    if IsControlPressed(0, 46) then 
-        local pos = GetEntityCoords(entity) + vector3(0, 0, -speed)
-        SetEntityCoordsNoOffset(entity, pos.x, pos.y, pos.z, true, true, true)
-    end
-
-    if IsControlPressed(0, 30) then 
-        local pos = GetEntityCoords(entity) + rightVector * speed
-        SetEntityCoordsNoOffset(entity, pos.x, pos.y, pos.z, true, true, true)
-    end
-
-    if IsControlPressed(0, 34) then 
-        local pos = GetEntityCoords(entity) - rightVector * speed
-        SetEntityCoordsNoOffset(entity, pos.x, pos.y, pos.z, true, true, true)
-    end
-
-    local camRotZ = camRot.z
-    SetEntityHeading(entity, camRotZ)
+    local camCoords = GetCamCoord(camera)
+    local camRot = GetCamRot(camera, 2)
+    
+    local forwardVector = vector3(
+        -math.sin(math.rad(camRot.z)) * math.abs(math.cos(math.rad(camRot.x))),
+        math.cos(math.rad(camRot.z)) * math.abs(math.cos(math.rad(camRot.x))),
+        math.sin(math.rad(camRot.x))
+    )
+    local rightVector = vector3(math.cos(math.rad(camRot.z)), math.sin(math.rad(camRot.z)), 0.0)
+    
+    local speed = IsControlPressed(0, controls.slow) and speedMultipliers.slow 
+                or IsControlPressed(0, controls.fast) and speedMultipliers.fast 
+                or speedMultipliers.normal
+    
+    if IsControlPressed(0, controls.forward) then camCoords += forwardVector * speed end
+    if IsControlPressed(0, controls.backward) then camCoords -= forwardVector * speed end
+    if IsControlPressed(0, controls.up) then camCoords += vector3(0, 0, speed) end
+    if IsControlPressed(0, controls.down) then camCoords -= vector3(0, 0, speed) end
+    if IsControlPressed(0, controls.right) then camCoords += rightVector * speed end
+    if IsControlPressed(0, controls.left) then camCoords -= rightVector * speed end
+    
+    SetCamCoord(camera, camCoords.x, camCoords.y, camCoords.z)
+    SetFocusPosAndVel(camCoords.x, camCoords.y, camCoords.z, 0.0, 0.0, 0.0)
 end
 
-function RotationToDirection(rotation)
-    local radZ = math.rad(rotation.z)
-    local radX = math.rad(rotation.x)
-    local num = math.abs(math.cos(radX))
-    return vector3(-math.sin(radZ) * num, math.cos(radZ) * num, math.sin(radX))
-end
+RegisterNetEvent("bp_noclip:togglefly", function(isinfly)
+    local playerId = GetPlayerServerId(PlayerId())
 
-function RotationToRightDirection(rotation)
-    local radZ = math.rad(rotation.z)
-    return vector3(math.cos(radZ), math.sin(radZ), 0)
-end
+    local isAuthorized = lib.callback.await('bp_noclip:validatefly', playerId)
 
-CreateThread(function()
-    while true do
-        Wait(0)
-        if noclipActive then
-            if not IsPedInAnyVehicle(playerPed, false) and not IsEntityPlayingAnim(playerPed, "skydive@base", "free_idle", 3) then
-                startParachuteAnimation()
-            end
-            handleNoclipMovement()
-        end
+    if not isAuthorized then
+        lib.notify({ title = "Nincs jogosultságod!", type = "error" })
+        return
+    end
+
+    noclipActive = not noclipActive
+    local playerPed = PlayerPedId()
+    if isinfly then
+        FreezeEntityPosition(playerPed, true)
+        SetEntityAlpha(playerPed, 0, false)
+        createCamera()
+        showTextUI()
+        lib.notify({ title = "NoClip bekapcsolva", type = "success" })
+        TriggerServerEvent("bp_noclip:adminlog", isinfly)
+    else
+        placeCharacter()
+        destroyCamera()
+        hideTextUI()
+        lib.notify({ title = "NoClip kikapcsolva", type = "error" })
+        TriggerServerEvent("bp_noclip:adminlog", isinfly)
     end
 end)
 
-RegisterCommand("fly", function()
-    if ESX.PlayerData.group ~= "user" then
-        toggleNoclip()
-    else
-        lib.notify({ title = "Nincsen jogosultságod", type = "error" })
+
+
+CreateThread(function()
+    while true do
+        if noclipActive then
+            sleep = 10
+            DisableAllControlActions(0)
+            for _, control in pairs(controls) do
+                EnableControlAction(0, control, true)
+            end
+            
+            handleNoclipMovement()
+            handleMouseRotation()
+            
+            if IsControlJustPressed(0, controls.exit) then
+                TriggerEvent("bp_noclip:togglefly")
+            end
+        end
+        Wait(sleep)
     end
-end, false)
+end)
